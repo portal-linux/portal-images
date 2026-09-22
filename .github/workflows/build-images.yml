@@ -82,7 +82,8 @@ jobs:
           sudo mount -t proc /proc rootfs/proc
           sudo mount -t sysfs /sys rootfs/sys
           sudo mount --bind /dev rootfs/dev
-          sudo cp /etc/resolv.conf rootfs/etc/resolv.conf
+          sudo rm -f rootfs/etc/resolv.conf
+          cat /etc/resolv.conf | sudo tee rootfs/etc/resolv.conf > /dev/null
 
           PACKAGES=$(grep -vE '^\s*#|^\s*$' arch-spin/packages.aarch64 | tr '\n' ' ')
 
