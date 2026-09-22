@@ -51,3 +51,94 @@ jobs:
             ${{ steps.hash.outputs.iso }}
             ${{ steps.hash.outputs.iso }}.sha256
             ${{ steps.hash.outputs.iso }}.minisig
+
+  build-disk-image:
+    name: build and sign ready-to-boot disk image
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: set up aarch64 emulation
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: install host tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y e2fsprogs minisign
+
+      - name: download arch linux arm rootfs
+        run: |
+          curl -L -o rootfs.tar.gz http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz
+
+      - name: bootstrap rootfs as real root
+        run: |
+          mkdir -p rootfs
+          sudo tar -xpf rootfs.tar.gz -C rootfs
+          # devtmpfs populates /dev at guest boot, no need to preserve host-extracted dev nodes
+          sudo rm -rf rootfs/dev
+          sudo mkdir -p rootfs/dev
+
+      - name: install packages via chroot under aarch64 emulation
+        run: |
+          sudo cp /usr/bin/qemu-aarch64-static rootfs/usr/bin/
+          sudo mount -t proc /proc rootfs/proc
+          sudo mount -t sysfs /sys rootfs/sys
+          sudo mount --bind /dev rootfs/dev
+
+          PACKAGES=$(grep -vE '^\s*#|^\s*$' arch-spin/packages.aarch64 | tr '\n' ' ')
+
+          sudo chroot rootfs /usr/bin/qemu-aarch64-static /usr/bin/bash -c "
+            set -e
+            pacman-key --init
+            pacman-key --populate archlinuxarm
+            pacman -Syu --noconfirm
+            pacman -S --noconfirm ${PACKAGES}
+          "
+
+          sudo umount rootfs/proc rootfs/sys rootfs/dev
+          sudo rm -f rootfs/usr/bin/qemu-aarch64-static
+
+      - name: apply portal guest configuration
+        run: |
+          sudo cp -a arch-spin/airootfs/etc/. rootfs/etc/
+          sudo chroot rootfs /usr/bin/qemu-aarch64-static /usr/bin/systemctl enable sshd cloud-init
+
+      - name: extract kernel and initramfs
+        run: |
+          mkdir -p out
+          sudo cp rootfs/boot/Image out/kernel
+          sudo cp rootfs/boot/initramfs-linux.img out/initrd
+          sudo chown "$(id -u)":"$(id -g)" out/kernel out/initrd
+
+      - name: build raw ext4 disk image
+        run: |
+          mkdir -p out
+          sudo /sbin/mkfs.ext4 -F -L archroot -d rootfs out/portal-arch.img 6G
+          sudo chown "$(id -u)":"$(id -g)" out/portal-arch.img
+
+      - name: compute sha256
+        run: |
+          sha256sum out/portal-arch.img out/kernel out/initrd | tee out/portal-arch.img.sha256
+
+      - name: sign with minisign
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          MINISIGN_KEY_PASSWORD: ${{ secrets.MINISIGN_KEY_PASSWORD }}
+        run: |
+          printf '%s' "$MINISIGN_SECRET_KEY" > minisign.key
+          echo "$MINISIGN_KEY_PASSWORD" | minisign -S -s minisign.key -m out/portal-arch.img
+          rm -f minisign.key
+
+      - name: publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: arch-spin-disk-${{ github.run_number }}
+          files: |
+            out/portal-arch.img
+            out/portal-arch.img.sha256
+            out/portal-arch.img.minisig
+            out/kernel
+            out/initrd
