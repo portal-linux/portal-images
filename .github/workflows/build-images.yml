@@ -89,8 +89,8 @@ jobs:
             set -e
             pacman-key --init
             pacman-key --populate archlinuxarm
-            pacman -Syu --noconfirm
-            pacman -S --noconfirm ${PACKAGES}
+            pacman -Syu --noconfirm --disable-sandbox
+            pacman -S --noconfirm --disable-sandbox ${PACKAGES}
           "
 
           sudo umount rootfs/proc rootfs/sys rootfs/dev
