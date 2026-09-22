@@ -109,7 +109,7 @@ jobs:
             pacman -Scc --noconfirm
           "
 
-          sudo umount rootfs/proc rootfs/sys rootfs/dev
+          sudo umount -l rootfs/proc rootfs/sys rootfs/dev
           sudo rm -f rootfs/usr/bin/qemu-aarch64-static
 
       - name: apply portal guest configuration
