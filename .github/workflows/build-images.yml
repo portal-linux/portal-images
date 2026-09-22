@@ -77,7 +77,7 @@ jobs:
 
       - name: bootstrap rootfs as real root
         run: |
-          mkdir -p rootfs
+          sudo mkdir -p rootfs
           sudo tar -xpf rootfs.tar.gz -C rootfs
           rm -f rootfs.tar.gz
           # devtmpfs populates /dev at guest boot, no need to preserve host-extracted dev nodes
