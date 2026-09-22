@@ -59,6 +59,13 @@ jobs:
       - name: checkout
         uses: actions/checkout@v4
 
+      - name: free disk space
+        run: |
+          # default runner disk is mostly consumed by preinstalled toolchains
+          # this job doesn't need - reclaim it before a disk-heavy image build
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache
+          df -h /
+
       - name: install host tooling
         run: |
           sudo apt-get update
@@ -72,6 +79,7 @@ jobs:
         run: |
           mkdir -p rootfs
           sudo tar -xpf rootfs.tar.gz -C rootfs
+          rm -f rootfs.tar.gz
           # devtmpfs populates /dev at guest boot, no need to preserve host-extracted dev nodes
           sudo rm -rf rootfs/dev
           sudo mkdir -p rootfs/dev
@@ -93,6 +101,7 @@ jobs:
             pacman-key --populate archlinuxarm
             pacman -Syu --noconfirm --disable-sandbox
             pacman -S --noconfirm --disable-sandbox ${PACKAGES}
+            pacman -Scc --noconfirm
           "
 
           sudo umount rootfs/proc rootfs/sys rootfs/dev
