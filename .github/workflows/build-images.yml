@@ -59,15 +59,10 @@ jobs:
       - name: checkout
         uses: actions/checkout@v4
 
-      - name: set up aarch64 emulation
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
       - name: install host tooling
         run: |
           sudo apt-get update
-          sudo apt-get install -y e2fsprogs minisign
+          sudo apt-get install -y e2fsprogs minisign qemu-user-static binfmt-support
 
       - name: download arch linux arm rootfs
         run: |
