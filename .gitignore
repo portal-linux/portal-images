@@ -1,0 +1,10 @@
+work/
+out/
+*.iso
+*.img
+*.qcow2
+*.raw
+*.sha256
+*.minisig
+*.key
+*.pub

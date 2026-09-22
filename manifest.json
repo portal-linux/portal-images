@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "images": [
+    {
+      "name": "arch-spin",
+      "version": "2026.09.01",
+      "arch": "aarch64",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "signature": "PLACEHOLDER_MINISIGN_SIGNATURE_NOT_REAL",
+      "min_app_version": "0.1.0",
+      "url": "https://github.com/portal/portal-images/releases/download/arch-spin-2026.09.01/portal-arch-2026.09.01-aarch64.iso"
+    }
+  ]
+}
