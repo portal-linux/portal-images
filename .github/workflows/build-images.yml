@@ -110,12 +110,12 @@ jobs:
           "
 
           sudo umount -l rootfs/proc rootfs/sys rootfs/dev
-          sudo rm -f rootfs/usr/bin/qemu-aarch64-static
 
       - name: apply portal guest configuration
         run: |
           sudo cp -a arch-spin/airootfs/etc/. rootfs/etc/
           sudo chroot rootfs /usr/bin/qemu-aarch64-static /usr/bin/systemctl enable sshd cloud-init
+          sudo rm -f rootfs/usr/bin/qemu-aarch64-static
 
       - name: extract kernel and initramfs
         run: |
