@@ -3,16 +3,16 @@
   "images": [
     {
       "name": "arch-spin",
-      "version": "0",
+      "version": "14",
       "arch": "aarch64",
       "min_app_version": "0.1.0",
-      "image_url": "https://github.com/portal-linux/portal-images/releases/download/arch-spin-disk-0/portal-arch.img",
-      "image_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "image_signature_url": "https://github.com/portal-linux/portal-images/releases/download/arch-spin-disk-0/portal-arch.img.minisig",
-      "kernel_url": "https://github.com/portal-linux/portal-images/releases/download/arch-spin-disk-0/kernel",
-      "kernel_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "initrd_url": "https://github.com/portal-linux/portal-images/releases/download/arch-spin-disk-0/initrd",
-      "initrd_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      "image_url": "https://github.com/portal-linux/portal-images/releases/download/arch-spin-disk-14/portal-arch.img.zst",
+      "image_sha256": "323fc7b0b0b0a800d12e1687b960ca1c7a28c1c64f230bb6749777e1f7c9fcde",
+      "image_signature_url": "https://github.com/portal-linux/portal-images/releases/download/arch-spin-disk-14/portal-arch.img.zst.minisig",
+      "kernel_url": "https://github.com/portal-linux/portal-images/releases/download/arch-spin-disk-14/kernel",
+      "kernel_sha256": "6c439977c6efe794dadd11713c14dae451b3aae567b1254a5f0549b0b4cea3b5",
+      "initrd_url": "https://github.com/portal-linux/portal-images/releases/download/arch-spin-disk-14/initrd",
+      "initrd_sha256": "9982150cb26a8b9d41266e9222acd1a1b3ad5dade94714721d01fdd1fac36ea2"
     }
   ]
 }
