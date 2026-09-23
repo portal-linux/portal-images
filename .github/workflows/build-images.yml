@@ -9,49 +9,6 @@ permissions:
   contents: write
 
 jobs:
-  build-arch-spin:
-    name: build and sign arch-spin
-    runs-on: ubuntu-latest
-    container:
-      image: archlinux:latest
-      options: --privileged
-    steps:
-      - name: checkout
-        uses: actions/checkout@v4
-
-      - name: install build tooling
-        run: |
-          pacman -Sy --noconfirm archiso minisign
-
-      - name: build iso
-        run: |
-          mkarchiso -v -w work -o out arch-spin
-
-      - name: compute sha256
-        id: hash
-        run: |
-          iso=$(ls out/*.iso | head -n1)
-          sha256sum "$iso" | tee "$iso.sha256"
-          echo "iso=$iso" >> "$GITHUB_OUTPUT"
-
-      - name: sign with minisign
-        env:
-          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
-          MINISIGN_KEY_PASSWORD: ${{ secrets.MINISIGN_KEY_PASSWORD }}
-        run: |
-          printf '%s' "$MINISIGN_SECRET_KEY" > minisign.key
-          echo "$MINISIGN_KEY_PASSWORD" | minisign -S -s minisign.key -m "${{ steps.hash.outputs.iso }}"
-          rm -f minisign.key
-
-      - name: publish release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: arch-spin-${{ github.run_number }}
-          files: |
-            ${{ steps.hash.outputs.iso }}
-            ${{ steps.hash.outputs.iso }}.sha256
-            ${{ steps.hash.outputs.iso }}.minisig
-
   build-disk-image:
     name: build and sign ready-to-boot disk image
     runs-on: ubuntu-latest
