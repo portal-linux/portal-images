@@ -26,7 +26,7 @@ jobs:
       - name: install host tooling
         run: |
           sudo apt-get update
-          sudo apt-get install -y e2fsprogs minisign qemu-user-static binfmt-support
+          sudo apt-get install -y e2fsprogs minisign qemu-user-static binfmt-support zstd
 
       - name: download arch linux arm rootfs
         run: |
@@ -91,9 +91,19 @@ jobs:
           sudo /sbin/mkfs.ext4 -F -L archroot -d rootfs out/portal-arch.img 6G
           sudo chown "$(id -u)":"$(id -g)" out/portal-arch.img
 
+      - name: compress disk image
+        run: |
+          # GitHub Releases caps a single asset at 2 GiB - the raw 6G image is
+          # mostly zero-filled unused space, which zstd compresses away almost
+          # entirely, so ship the compressed image and have the client
+          # decompress after verifying it, rather than uploading the raw file.
+          zstd -T0 -19 --long=27 out/portal-arch.img -o out/portal-arch.img.zst
+          rm -f out/portal-arch.img
+          ls -lh out/
+
       - name: compute sha256
         run: |
-          sha256sum out/portal-arch.img out/kernel out/initrd | tee out/portal-arch.img.sha256
+          sha256sum out/portal-arch.img.zst out/kernel out/initrd | tee out/portal-arch.img.zst.sha256
 
       - name: sign with minisign
         env:
@@ -101,7 +111,7 @@ jobs:
           MINISIGN_KEY_PASSWORD: ${{ secrets.MINISIGN_KEY_PASSWORD }}
         run: |
           printf '%s' "$MINISIGN_SECRET_KEY" > minisign.key
-          echo "$MINISIGN_KEY_PASSWORD" | minisign -S -s minisign.key -m out/portal-arch.img
+          echo "$MINISIGN_KEY_PASSWORD" | minisign -S -s minisign.key -m out/portal-arch.img.zst
           rm -f minisign.key
 
       - name: publish release
@@ -109,8 +119,8 @@ jobs:
         with:
           tag_name: arch-spin-disk-${{ github.run_number }}
           files: |
-            out/portal-arch.img
-            out/portal-arch.img.sha256
-            out/portal-arch.img.minisig
+            out/portal-arch.img.zst
+            out/portal-arch.img.zst.sha256
+            out/portal-arch.img.zst.minisig
             out/kernel
             out/initrd
