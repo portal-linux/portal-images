@@ -8,18 +8,31 @@ produces the curated guest images the host app can download, verify, and boot.
 
 ## Curated distros
 
-| Distro    | Build tool | Status                      |
-| --------- | ---------- | --------------------------- |
-| arch-spin | archiso    | scaffolded (ships first)    |
-| Fedora    | mkosi      | planned, not implemented    |
-| Ubuntu    | mkosi      | planned, not implemented    |
-| Debian    | mkosi      | planned, not implemented    |
-| NixOS     | nix flake  | planned, not implemented    |
+| Distro    | Build tool                    | Status                    |
+| --------- | ------------------------------| ------------------------- |
+| arch-spin | pacstrap + mkfs.ext4 (aarch64 chroot under qemu-user emulation) | working |
+| Fedora    | mkosi                         | planned, not implemented  |
+| Ubuntu    | mkosi                         | planned, not implemented  |
+| Debian    | mkosi                         | planned, not implemented  |
+| NixOS     | nix flake                     | planned, not implemented  |
 
-The Arch spin is the project's own default image. It is built with archiso and
-ships a `portal` user, sshd enabled, and cloud-init for unattended install. The
-other distros are on the roadmap; each has a placeholder README describing how
-it will be built.
+The Arch spin is the project's own default image: a ready-to-boot raw ext4
+disk image (plus extracted kernel and initramfs) built by bootstrapping the
+official ArchLinuxARM rootfs and installing `packages.aarch64` into it via
+`pacstrap` inside a chroot, under aarch64 emulation (GitHub's runners are
+x86_64; ArchLinuxARM packages are aarch64). It ships a `portal` user, sshd
+enabled, and cloud-init for unattended install.
+
+Note: this is **not** built with `archiso`/`mkarchiso`, despite that being
+the initial plan. `archiso` only supports the boot modes vanilla Arch Linux
+ships for (`bios.syslinux`, `uefi.systemd-boot`) - there is no aarch64
+variant, because Arch Linux itself is x86_64-only upstream (that's exactly
+why the separate ArchLinuxARM project exists). Portal boots guests directly
+from a kernel, initramfs, and disk image via `VZLinuxBootLoader`, so an
+installer ISO was never actually needed - only the raw disk image is.
+
+The other distros are on the roadmap; each has a placeholder README
+describing how it will be built.
 
 ## Verification model
 
@@ -43,9 +56,10 @@ signature string) so nobody mistakes scaffold data for real signed data.
 
 Images are built in GitHub Actions on a weekly cron (and on manual
 `workflow_dispatch`) and published to GitHub Releases. See
-`.github/workflows/build-images.yml`. The arch-spin job builds the ISO with
-archiso, hashes it, signs it with minisign using repo secrets, and uploads the
-image plus its `.sha256` and `.minisig` to a release.
+`.github/workflows/build-images.yml`. The `build-disk-image` job bootstraps
+the rootfs, installs packages, builds the raw disk image, hashes it, signs it
+with minisign using repo secrets, and uploads the image plus its `.sha256`,
+`.minisig`, extracted `kernel`, and `initrd` to a release.
 
 ## Licensing
 

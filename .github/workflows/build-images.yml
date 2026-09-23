@@ -9,30 +9,101 @@ permissions:
   contents: write
 
 jobs:
-  build-arch-spin:
-    name: build and sign arch-spin
+  build-disk-image:
+    name: build and sign ready-to-boot disk image
     runs-on: ubuntu-latest
-    container:
-      image: archlinux:latest
-      options: --privileged
     steps:
       - name: checkout
         uses: actions/checkout@v4
 
-      - name: install build tooling
+      - name: free disk space
         run: |
-          pacman -Sy --noconfirm archiso minisign
+          # default runner disk is mostly consumed by preinstalled toolchains
+          # this job doesn't need - reclaim it before a disk-heavy image build
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache
+          df -h /
 
-      - name: build iso
+      - name: install host tooling
         run: |
-          mkarchiso -v -w work -o out arch-spin
+          sudo apt-get update
+          sudo apt-get install -y e2fsprogs minisign qemu-user-static binfmt-support zstd
+
+      - name: download arch linux arm rootfs
+        run: |
+          curl -L -o rootfs.tar.gz http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz
+
+      - name: bootstrap rootfs as real root
+        run: |
+          sudo mkdir -p rootfs
+          sudo tar -xpf rootfs.tar.gz -C rootfs
+          rm -f rootfs.tar.gz
+          # devtmpfs populates /dev at guest boot, no need to preserve host-extracted dev nodes
+          sudo rm -rf rootfs/dev
+          sudo mkdir -p rootfs/dev
+
+      - name: install packages via chroot under aarch64 emulation
+        run: |
+          sudo cp /usr/bin/qemu-aarch64-static rootfs/usr/bin/
+          sudo mount -t proc /proc rootfs/proc
+          sudo mount -t sysfs /sys rootfs/sys
+          sudo mount --bind /dev rootfs/dev
+          sudo rm -f rootfs/etc/resolv.conf
+          cat /etc/resolv.conf | sudo tee rootfs/etc/resolv.conf > /dev/null
+
+          # pacman's disk-space check relies on statvfs, which qemu-user's aarch64
+          # emulation does not implement correctly - disable the check itself
+          # rather than the space it (incorrectly) reports as missing
+          sudo sed -i '/^CheckSpace/d' rootfs/etc/pacman.conf
+
+          PACKAGES=$(grep -vE '^\s*#|^\s*$' arch-spin/packages.aarch64 | tr '\n' ' ')
+
+          sudo chroot rootfs /usr/bin/qemu-aarch64-static /usr/bin/bash -c "
+            set -e
+            pacman-key --init
+            pacman-key --populate archlinuxarm
+            pacman -Syu --noconfirm --disable-sandbox
+            pacman -S --noconfirm --disable-sandbox ${PACKAGES}
+            pacman -Scc --noconfirm
+          "
+
+          sudo umount -l rootfs/proc rootfs/sys rootfs/dev
+
+      - name: apply portal guest configuration
+        run: |
+          sudo cp -a arch-spin/airootfs/etc/. rootfs/etc/
+          sudo mount -t proc /proc rootfs/proc
+          sudo mount -t sysfs /sys rootfs/sys
+          sudo mount --bind /dev rootfs/dev
+          sudo chroot rootfs /usr/bin/qemu-aarch64-static /usr/bin/systemctl enable sshd cloud-init.target
+          sudo umount -l rootfs/proc rootfs/sys rootfs/dev
+          sudo rm -f rootfs/usr/bin/qemu-aarch64-static
+
+      - name: extract kernel and initramfs
+        run: |
+          mkdir -p out
+          sudo cp rootfs/boot/Image out/kernel
+          sudo cp rootfs/boot/initramfs-linux.img out/initrd
+          sudo chown "$(id -u)":"$(id -g)" out/kernel out/initrd
+
+      - name: build raw ext4 disk image
+        run: |
+          mkdir -p out
+          sudo /sbin/mkfs.ext4 -F -L archroot -d rootfs out/portal-arch.img 6G
+          sudo chown "$(id -u)":"$(id -g)" out/portal-arch.img
+
+      - name: compress disk image
+        run: |
+          # GitHub Releases caps a single asset at 2 GiB - the raw 6G image is
+          # mostly zero-filled unused space, which zstd compresses away almost
+          # entirely, so ship the compressed image and have the client
+          # decompress after verifying it, rather than uploading the raw file.
+          zstd -T0 -19 --long=27 out/portal-arch.img -o out/portal-arch.img.zst
+          rm -f out/portal-arch.img
+          ls -lh out/
 
       - name: compute sha256
-        id: hash
         run: |
-          iso=$(ls out/*.iso | head -n1)
-          sha256sum "$iso" | tee "$iso.sha256"
-          echo "iso=$iso" >> "$GITHUB_OUTPUT"
+          sha256sum out/portal-arch.img.zst out/kernel out/initrd | tee out/portal-arch.img.zst.sha256
 
       - name: sign with minisign
         env:
@@ -40,14 +111,16 @@ jobs:
           MINISIGN_KEY_PASSWORD: ${{ secrets.MINISIGN_KEY_PASSWORD }}
         run: |
           printf '%s' "$MINISIGN_SECRET_KEY" > minisign.key
-          echo "$MINISIGN_KEY_PASSWORD" | minisign -S -s minisign.key -m "${{ steps.hash.outputs.iso }}"
+          echo "$MINISIGN_KEY_PASSWORD" | minisign -S -s minisign.key -m out/portal-arch.img.zst
           rm -f minisign.key
 
       - name: publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: arch-spin-${{ github.run_number }}
+          tag_name: arch-spin-disk-${{ github.run_number }}
           files: |
-            ${{ steps.hash.outputs.iso }}
-            ${{ steps.hash.outputs.iso }}.sha256
-            ${{ steps.hash.outputs.iso }}.minisig
+            out/portal-arch.img.zst
+            out/portal-arch.img.zst.sha256
+            out/portal-arch.img.zst.minisig
+            out/kernel
+            out/initrd
