@@ -114,7 +114,11 @@ jobs:
       - name: apply portal guest configuration
         run: |
           sudo cp -a arch-spin/airootfs/etc/. rootfs/etc/
-          sudo chroot rootfs /usr/bin/qemu-aarch64-static /usr/bin/systemctl enable sshd cloud-init
+          sudo mount -t proc /proc rootfs/proc
+          sudo mount -t sysfs /sys rootfs/sys
+          sudo mount --bind /dev rootfs/dev
+          sudo chroot rootfs /usr/bin/qemu-aarch64-static /usr/bin/systemctl enable sshd cloud-init.target
+          sudo umount -l rootfs/proc rootfs/sys rootfs/dev
           sudo rm -f rootfs/usr/bin/qemu-aarch64-static
 
       - name: extract kernel and initramfs
