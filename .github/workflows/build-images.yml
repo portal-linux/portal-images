@@ -150,7 +150,7 @@ jobs:
       - name: install host tooling
         run: |
           sudo apt-get update
-          sudo apt-get install -y e2fsprogs minisign qemu-user-static binfmt-support zstd pipx debootstrap
+          sudo apt-get install -y e2fsprogs minisign qemu-user-static binfmt-support zstd pipx debootstrap debian-archive-keyring
           # mkosi isn't on pypi under this name - install straight from the
           # project's own repo, the method upstream documents
           pipx install git+https://github.com/systemd/mkosi.git
