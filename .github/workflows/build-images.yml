@@ -152,18 +152,21 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y e2fsprogs minisign qemu-user-static binfmt-support zstd pipx debootstrap
           # mkosi isn't on pypi under this name - install straight from the
-          # project's own repo, the method upstream documents. this runner
-          # image configures pipx system-wide (PIPX_BIN_DIR=/usr/local/bin),
-          # which is already on root's secure_path, so no PATH wiring needed
+          # project's own repo, the method upstream documents
           pipx install git+https://github.com/systemd/mkosi.git
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: build fedora rootfs with mkosi
         working-directory: fedora
         run: |
+          MKOSI_BIN=$(command -v mkosi)
+          echo "mkosi resolved at: $MKOSI_BIN"
           # unprivileged user namespaces are locked down on this runner image
           # (ubuntu's apparmor userns restriction), so mkosi's own privilege
-          # acquisition via unshare fails - run it as real root instead
-          sudo mkosi
+          # acquisition via unshare fails - run it as real root instead.
+          # sudo does its own PATH lookup (secure_path), which may not include
+          # wherever pipx put the symlink, so invoke the resolved absolute path
+          sudo "$MKOSI_BIN"
 
       - name: extract kernel and initramfs
         run: |
