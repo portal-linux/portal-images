@@ -150,13 +150,15 @@ jobs:
       - name: install host tooling
         run: |
           sudo apt-get update
-          sudo apt-get install -y e2fsprogs minisign qemu-user-static binfmt-support zstd pipx
-          pipx install mkosi
+          sudo apt-get install -y e2fsprogs minisign qemu-user-static binfmt-support zstd pipx debootstrap
+          # mkosi isn't on pypi under this name - install straight from the
+          # project's own repo, the method upstream documents
+          pipx install git+https://github.com/systemd/mkosi.git
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: build fedora rootfs with mkosi
         working-directory: fedora
-        run: sudo "$HOME/.local/bin/mkosi"
+        run: mkosi
 
       - name: extract kernel and initramfs
         run: |
