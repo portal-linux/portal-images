@@ -171,8 +171,22 @@ jobs:
       - name: extract kernel and initramfs
         run: |
           mkdir -p out
-          sudo cp fedora/rootfs/boot/vmlinuz-* out/kernel
-          sudo cp fedora/rootfs/boot/initramfs-*.img out/initrd
+          echo "--- fedora/rootfs/boot tree ---"
+          sudo find fedora/rootfs/boot
+
+          # recent fedora installs kernels under the bootloader-spec layout
+          # (/boot/<machine-id>/<version>/linux and .../initrd), not the
+          # classic flat /boot/vmlinuz-* naming arch-spin's kernel uses -
+          # match both so this survives either layout
+          KERNEL=$(sudo find fedora/rootfs/boot \( -name 'vmlinuz-*' -o -name 'linux' \) -type f | sort | tail -1)
+          INITRD=$(sudo find fedora/rootfs/boot \( -name 'initramfs-*.img' -o -name 'initrd' \) -type f | sort | tail -1)
+          echo "kernel: $KERNEL"
+          echo "initrd: $INITRD"
+          test -n "$KERNEL"
+          test -n "$INITRD"
+
+          sudo cp "$KERNEL" out/kernel
+          sudo cp "$INITRD" out/initrd
           sudo chown "$(id -u)":"$(id -g)" out/kernel out/initrd
 
       - name: build raw ext4 disk image
