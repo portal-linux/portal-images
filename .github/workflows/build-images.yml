@@ -168,18 +168,38 @@ jobs:
           # wherever pipx put the symlink, so invoke the resolved absolute path
           sudo "$MKOSI_BIN"
 
+      - name: generate a full initramfs with dracut
+        run: |
+          # mkosi's own build only leaves a partial kernel-modules.initrd
+          # fragment behind (bootloader-spec staged initrd, not a complete
+          # image) - build a real one the same way a normal fedora install
+          # would, under aarch64 emulation, chrooted, exactly like arch-spin
+          # already does for pacman
+          KVER=$(sudo ls fedora/rootfs/lib/modules | head -1)
+          echo "kernel version: $KVER"
+
+          sudo cp /usr/bin/qemu-aarch64-static fedora/rootfs/usr/bin/
+          sudo mount -t proc /proc fedora/rootfs/proc
+          sudo mount -t sysfs /sys fedora/rootfs/sys
+          sudo mount --bind /dev fedora/rootfs/dev
+
+          sudo chroot fedora/rootfs /usr/bin/qemu-aarch64-static /usr/bin/dracut \
+            --force --no-hostonly "/boot/initramfs-${KVER}.img" "${KVER}"
+
+          sudo umount -l fedora/rootfs/proc fedora/rootfs/sys fedora/rootfs/dev
+          sudo rm -f fedora/rootfs/usr/bin/qemu-aarch64-static
+
       - name: extract kernel and initramfs
         run: |
           mkdir -p out
           echo "--- fedora/rootfs/boot tree ---"
           sudo find fedora/rootfs/boot
 
-          # recent fedora installs kernels under the bootloader-spec layout
-          # (/boot/<machine-id>/<version>/linux and .../initrd), not the
-          # classic flat /boot/vmlinuz-* naming arch-spin's kernel uses -
-          # match both so this survives either layout
-          KERNEL=$(sudo find fedora/rootfs/boot \( -name 'vmlinuz-*' -o -name 'linux' \) -type f | sort | tail -1)
-          INITRD=$(sudo find fedora/rootfs/boot \( -name 'initramfs-*.img' -o -name 'initrd' \) -type f | sort | tail -1)
+          # fedora's bootloader-spec layout names the kernel plain "vmlinuz"
+          # under /boot/fedora/<version>/, not the classic /boot/vmlinuz-*
+          # arch-spin's kernel uses - match both so this survives either
+          KERNEL=$(sudo find fedora/rootfs/boot \( -name 'vmlinuz-*' -o -name 'vmlinuz' \) -type f | sort | tail -1)
+          INITRD=$(sudo find fedora/rootfs/boot -name 'initramfs-*.img' -type f | sort | tail -1)
           echo "kernel: $KERNEL"
           echo "initrd: $INITRD"
           test -n "$KERNEL"
