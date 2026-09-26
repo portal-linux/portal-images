@@ -158,7 +158,11 @@ jobs:
 
       - name: build fedora rootfs with mkosi
         working-directory: fedora
-        run: mkosi
+        run: |
+          # unprivileged user namespaces are locked down on this runner image
+          # (ubuntu's apparmor userns restriction), so mkosi's own privilege
+          # acquisition via unshare fails - run it as real root instead
+          sudo "$HOME/.local/bin/mkosi"
 
       - name: extract kernel and initramfs
         run: |
