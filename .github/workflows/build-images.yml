@@ -124,3 +124,75 @@ jobs:
             out/portal-arch.img.zst.minisig
             out/kernel
             out/initrd
+
+  build-fedora-disk-image:
+    name: build and sign ready-to-boot fedora disk image
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: free disk space
+        run: |
+          # default runner disk is mostly consumed by preinstalled toolchains
+          # this job doesn't need - reclaim it before a disk-heavy image build
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache
+          df -h /
+
+      - name: install host tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y e2fsprogs minisign qemu-user-static binfmt-support zstd pipx
+          pipx install mkosi
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: build fedora rootfs with mkosi
+        working-directory: fedora
+        run: sudo "$HOME/.local/bin/mkosi"
+
+      - name: extract kernel and initramfs
+        run: |
+          mkdir -p out
+          sudo cp fedora/rootfs/boot/vmlinuz-* out/kernel
+          sudo cp fedora/rootfs/boot/initramfs-*.img out/initrd
+          sudo chown "$(id -u)":"$(id -g)" out/kernel out/initrd
+
+      - name: build raw ext4 disk image
+        run: |
+          mkdir -p out
+          sudo /sbin/mkfs.ext4 -F -L fedoraroot -d fedora/rootfs out/portal-fedora.img 6G
+          sudo chown "$(id -u)":"$(id -g)" out/portal-fedora.img
+
+      - name: compress disk image
+        run: |
+          # GitHub Releases caps a single asset at 2 GiB - the raw 6G image is
+          # mostly zero-filled unused space, which zstd compresses away almost
+          # entirely, so ship the compressed image and have the client
+          # decompress after verifying it, rather than uploading the raw file.
+          zstd -T0 -19 --long=27 out/portal-fedora.img -o out/portal-fedora.img.zst
+          rm -f out/portal-fedora.img
+          ls -lh out/
+
+      - name: compute sha256
+        run: |
+          sha256sum out/portal-fedora.img.zst out/kernel out/initrd | tee out/portal-fedora.img.zst.sha256
+
+      - name: sign with minisign
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          MINISIGN_KEY_PASSWORD: ${{ secrets.MINISIGN_KEY_PASSWORD }}
+        run: |
+          printf '%s' "$MINISIGN_SECRET_KEY" > minisign.key
+          echo "$MINISIGN_KEY_PASSWORD" | minisign -S -s minisign.key -m out/portal-fedora.img.zst
+          rm -f minisign.key
+
+      - name: publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: fedora-disk-${{ github.run_number }}
+          files: |
+            out/portal-fedora.img.zst
+            out/portal-fedora.img.zst.sha256
+            out/portal-fedora.img.zst.minisig
+            out/kernel
+            out/initrd
