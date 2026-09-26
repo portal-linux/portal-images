@@ -1,4 +1,0 @@
-#!/bin/bash
-set -e
-
-systemctl enable sshd.service NetworkManager.service cloud-init.target
