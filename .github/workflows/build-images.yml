@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "0 6 * * 1"
   workflow_dispatch:
+    inputs:
+      image:
+        description: "which curated image to build"
+        type: choice
+        options: [all, arch, fedora]
+        default: all
 
 permissions:
   contents: write
@@ -12,6 +18,7 @@ jobs:
   build-disk-image:
     name: build and sign ready-to-boot disk image
     runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.image == 'all' || github.event.inputs.image == 'arch'
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -122,5 +129,122 @@ jobs:
             out/portal-arch.img.zst
             out/portal-arch.img.zst.sha256
             out/portal-arch.img.zst.minisig
+            out/kernel
+            out/initrd
+
+  build-fedora-disk-image:
+    name: build and sign ready-to-boot fedora disk image
+    runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.image == 'all' || github.event.inputs.image == 'fedora'
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: free disk space
+        run: |
+          # default runner disk is mostly consumed by preinstalled toolchains
+          # this job doesn't need - reclaim it before a disk-heavy image build
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache
+          df -h /
+
+      - name: install host tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y e2fsprogs minisign qemu-user-static binfmt-support zstd pipx debootstrap debian-archive-keyring
+          # mkosi isn't on pypi under this name - install straight from the
+          # project's own repo, the method upstream documents
+          pipx install git+https://github.com/systemd/mkosi.git
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: build fedora rootfs with mkosi
+        working-directory: fedora
+        run: |
+          MKOSI_BIN=$(command -v mkosi)
+          echo "mkosi resolved at: $MKOSI_BIN"
+          # unprivileged user namespaces are locked down on this runner image
+          # (ubuntu's apparmor userns restriction), so mkosi's own privilege
+          # acquisition via unshare fails - run it as real root instead.
+          # sudo does its own PATH lookup (secure_path), which may not include
+          # wherever pipx put the symlink, so invoke the resolved absolute path
+          sudo "$MKOSI_BIN"
+
+      - name: generate a full initramfs with dracut
+        run: |
+          # mkosi's own build only leaves a partial kernel-modules.initrd
+          # fragment behind (bootloader-spec staged initrd, not a complete
+          # image) - build a real one the same way a normal fedora install
+          # would, under aarch64 emulation, chrooted, exactly like arch-spin
+          # already does for pacman
+          KVER=$(sudo ls fedora/rootfs/lib/modules | head -1)
+          echo "kernel version: $KVER"
+
+          sudo cp /usr/bin/qemu-aarch64-static fedora/rootfs/usr/bin/
+          sudo mount -t proc /proc fedora/rootfs/proc
+          sudo mount -t sysfs /sys fedora/rootfs/sys
+          sudo mount --bind /dev fedora/rootfs/dev
+
+          sudo chroot fedora/rootfs /usr/bin/qemu-aarch64-static /usr/bin/dracut \
+            --force --no-hostonly "/boot/initramfs-${KVER}.img" "${KVER}"
+
+          sudo umount -l fedora/rootfs/proc fedora/rootfs/sys fedora/rootfs/dev
+          sudo rm -f fedora/rootfs/usr/bin/qemu-aarch64-static
+
+      - name: extract kernel and initramfs
+        run: |
+          mkdir -p out
+          echo "--- fedora/rootfs/boot tree ---"
+          sudo find fedora/rootfs/boot
+
+          # fedora's bootloader-spec layout names the kernel plain "vmlinuz"
+          # under /boot/fedora/<version>/, not the classic /boot/vmlinuz-*
+          # arch-spin's kernel uses - match both so this survives either
+          KERNEL=$(sudo find fedora/rootfs/boot \( -name 'vmlinuz-*' -o -name 'vmlinuz' \) -type f | sort | tail -1)
+          INITRD=$(sudo find fedora/rootfs/boot -name 'initramfs-*.img' -type f | sort | tail -1)
+          echo "kernel: $KERNEL"
+          echo "initrd: $INITRD"
+          test -n "$KERNEL"
+          test -n "$INITRD"
+
+          sudo cp "$KERNEL" out/kernel
+          sudo cp "$INITRD" out/initrd
+          sudo chown "$(id -u)":"$(id -g)" out/kernel out/initrd
+
+      - name: build raw ext4 disk image
+        run: |
+          mkdir -p out
+          sudo /sbin/mkfs.ext4 -F -L fedoraroot -d fedora/rootfs out/portal-fedora.img 6G
+          sudo chown "$(id -u)":"$(id -g)" out/portal-fedora.img
+
+      - name: compress disk image
+        run: |
+          # GitHub Releases caps a single asset at 2 GiB - the raw 6G image is
+          # mostly zero-filled unused space, which zstd compresses away almost
+          # entirely, so ship the compressed image and have the client
+          # decompress after verifying it, rather than uploading the raw file.
+          zstd -T0 -19 --long=27 out/portal-fedora.img -o out/portal-fedora.img.zst
+          rm -f out/portal-fedora.img
+          ls -lh out/
+
+      - name: compute sha256
+        run: |
+          sha256sum out/portal-fedora.img.zst out/kernel out/initrd | tee out/portal-fedora.img.zst.sha256
+
+      - name: sign with minisign
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          MINISIGN_KEY_PASSWORD: ${{ secrets.MINISIGN_KEY_PASSWORD }}
+        run: |
+          printf '%s' "$MINISIGN_SECRET_KEY" > minisign.key
+          echo "$MINISIGN_KEY_PASSWORD" | minisign -S -s minisign.key -m out/portal-fedora.img.zst
+          rm -f minisign.key
+
+      - name: publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: fedora-disk-${{ github.run_number }}
+          files: |
+            out/portal-fedora.img.zst
+            out/portal-fedora.img.zst.sha256
+            out/portal-fedora.img.zst.minisig
             out/kernel
             out/initrd
